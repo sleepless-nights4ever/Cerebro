@@ -16,7 +16,7 @@ const authMiddleware = (req, res, next) => {
     }
 
     try {
-        const verified = jwt.verify(token, "SUPER_SECRET_KEY");
+        const verified = jwt.verify(token, process.env.JWT_SECRET || "SUPER_SECRET_KEY");
 
         req.user = verified; // now you can access user id in protected routes
 

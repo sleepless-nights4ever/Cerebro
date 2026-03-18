@@ -1,5 +1,6 @@
 const { spawn } = require("child_process");
-const Mood = require("../models/mood");
+const path = require("path");
+const Mood = require("../models/mood_model");
 
 exports.predictMentalHealth = async (req, res) => {
   try {
@@ -7,8 +8,9 @@ exports.predictMentalHealth = async (req, res) => {
 
     const inputData = req.body;
 
-    const pythonProcess = spawn("python", [
-      "../ai/predict.py",
+    const pythonCommand = process.platform === "win32" ? "python" : "python3";
+    const pythonProcess = spawn(pythonCommand, [
+      path.join(__dirname, "../../ai/predict.py"),
       JSON.stringify(inputData)
     ]);
 
@@ -23,10 +25,10 @@ exports.predictMentalHealth = async (req, res) => {
       errorOutput += data.toString();
     });
 
-    pythonProcess.on("close", async () => {
-      if (errorOutput) {
+    pythonProcess.on("close", async (code) => {
+      if (code !== 0 && !result) {
         console.error("Python Error:", errorOutput);
-        return res.status(500).json({ error: errorOutput });
+        return res.status(500).json({ error: errorOutput || "Python process failed" });
       }
 
       if (!result) {
