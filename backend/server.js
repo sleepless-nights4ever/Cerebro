@@ -3,6 +3,11 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const path = require("path");
+
+if (!process.env.JWT_SECRET) {
+    throw new Error("Set JWT_SECRET before starting CEREBRO.");
+}
 
 const app = express();
 
@@ -35,9 +40,13 @@ app.get("/", (req, res) => {
     res.send("🚀 Server is running");
 });
 
-// start server
-app.listen(5000, () => {
-    console.log("🔥 Server started on port 5000");
+app.get("/app", (req, res) => {
+    res.sendFile(path.join(__dirname, "../frontend/cerebro_frontend (5).html"));
+});
+
+const port = process.env.PORT || 5000;
+app.listen(port, () => {
+    console.log(`CEREBRO is running at http://localhost:${port}/app`);
 });
 
 

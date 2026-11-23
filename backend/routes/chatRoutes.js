@@ -1,48 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const https = require("https");
+const { callGemini } = require("../services/gemini");
+const { isUrgentMessage } = require("../services/conversationAnalysis");
 const authMiddleware = require("../middleware/authMiddleware");
 const Mood = require("../models/mood_model");
 const { retrieveWellnessGuidance } = require("../services/wellnessKnowledge");
-
-// ── Gemini API call
-function callGemini(apiKey, systemPrompt, messages) {
-  return new Promise((resolve, reject) => {
-    const contents = messages.map(m => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }]
-    }));
-
-    const payload = JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents,
-      generationConfig: { maxOutputTokens: 300, temperature: 0.8 }
-    });
-
-    const options = {
-      hostname: "generativelanguage.googleapis.com",
-      path: `/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload)
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-        catch (e) { reject(new Error("Invalid JSON from Gemini: " + data)); }
-      });
-    });
-    req.setTimeout(8000, () => req.destroy(new Error("Gemini request timed out")));
-    req.on("error", reject);
-    req.write(payload);
-    req.end();
-  });
-}
 
 // ── Rule-based fallback responses
 const responses = {
@@ -109,7 +71,7 @@ const responses = {
 
 function detectIntent(message) {
   const msg = message.toLowerCase();
-  if (/suicid|kill myself|end my life|don't want to live|want to die/.test(msg)) return "crisis";
+  if (isUrgentMessage(msg)) return "crisis";
   if (/^(hi|hello|hey|good morning|good evening|howdy|sup)\b/.test(msg)) return "greeting";
   if (/sad|depress|cry|crying|hopeless|empty|numb|miserable|worthless/.test(msg)) return "sad";
   if (/anxi|panic|worry|worried|nervous|scared|fear|overwhelm/.test(msg)) return "anxious";

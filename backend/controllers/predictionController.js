@@ -3,6 +3,7 @@ const { promisify } = require("util");
 const runPython = promisify(execFile);
 const path = require("path");
 const Mood = require("../models/mood_model");
+const { analyzeConversation, summarizeSupport } = require("../services/conversationAnalysis");
 
 exports.predictMentalHealth = async (req, res) => {
   try {
@@ -18,12 +19,24 @@ exports.predictMentalHealth = async (req, res) => {
       return res.status(400).json({ error: "Complete the assessment before submitting." });
     }
 
+    const { conversationMessage, ...questionnaire } = inputData;
+    if (conversationMessage !== undefined && (
+      typeof conversationMessage !== "string" || !conversationMessage.trim() ||
+      conversationMessage.length > 4000
+    )) {
+      return res.status(400).json({ error: "Choose a conversation message of up to 4000 characters." });
+    }
+
     const pythonCommand = process.env.PYTHON_BIN || (process.platform === "win32" ? "python" : "python3");
     const { stdout } = await runPython(pythonCommand, [
       path.join(__dirname, "../../ai/predict.py"),
-      JSON.stringify(inputData)
+      JSON.stringify(questionnaire)
     ], { timeout: 15000 });
     const prediction = JSON.parse(stdout);
+    const conversation = conversationMessage
+      ? await analyzeConversation(conversationMessage, process.env.GEMINI_API_KEY)
+      : null;
+    const support = summarizeSupport(prediction.mental_score, conversation);
 
     // SAVE TO DATABASE
     const moodEntry = new Mood({
@@ -80,6 +93,8 @@ exports.predictMentalHealth = async (req, res) => {
     return res.json({
       success: true,
       prediction,
+      conversation,
+      support,
       trend,
       recent_scores: scores
     });

@@ -5,7 +5,7 @@ const express = require("express");
 const router = express.Router();
 const User = require("../models/user");
 
-const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_KEY";
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // REGISTER USER
 router.post("/register", async (req, res) => {

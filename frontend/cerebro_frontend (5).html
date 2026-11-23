@@ -414,6 +414,11 @@ textarea{resize:vertical;min-height:80px;}
             </div>
           </div>
 
+          <div style="padding:0 20px 16px">
+            <label><input type="checkbox" id="include-chat-analysis"> Include my latest chat message</label>
+            <div style="font-size:12px;color:var(--text2)">Optional. Sends your latest chat message to Gemini for sentiment, emotion, and intent analysis.</div>
+          </div>
+
           <div style="padding:20px;display:flex;align-items:center;gap:14px;border-top:1px solid var(--border)">
             <button class="btn btn-primary" onclick="runPrediction()" id="predict-btn" style="min-width:180px">🧠 Run AI Assessment</button>
             
@@ -442,6 +447,7 @@ textarea{resize:vertical;min-height:80px;}
             <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Wellness Score</div>
             <div id="pred-risk-badge" class="risk-badge risk-low" style="margin:0 auto 8px">—</div>
             <div style="font-size:12px;color:var(--text3)" id="pred-confidence"></div>
+            <div style="font-size:12px;color:var(--text2)" id="pred-conversation"></div>
             <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
               <div id="pred-trend-line" style="font-size:13px;color:var(--text2)"></div>
             </div>
@@ -590,7 +596,7 @@ textarea{resize:vertical;min-height:80px;}
 </div>
 
 <script>
-const API='http://localhost:5000/api';
+const API=location.pathname==='/app'?'/api':'http://localhost:5000/api';
 let token=localStorage.getItem('cerebro_token');
 let userEmail=localStorage.getItem('cerebro_email')||'';
 let selectedMood='';
@@ -644,7 +650,7 @@ async function handleRegister(){
   catch{ showToast('Could not connect to server','error'); }
   btn.textContent='Create account';
 }
-function logout(){ token=null; userEmail=null; localStorage.removeItem('cerebro_token'); localStorage.removeItem('cerebro_email'); localStorage.removeItem('pred_history'); showAuth(); }
+function logout(){ token=null; userEmail=null; predHistory=[]; clearChat(); document.getElementById('include-chat-analysis').checked=false; localStorage.removeItem('cerebro_token'); localStorage.removeItem('cerebro_email'); localStorage.removeItem('pred_history'); showAuth(); }
 
 function navigate(page){
   document.querySelectorAll('.page').forEach(p=>{p.classList.add('hidden');p.classList.remove('active');});
@@ -716,6 +722,11 @@ async function runPrediction(){
     payload[key]=v;
   }
 
+  if(!DEMO&&document.getElementById('include-chat-analysis').checked){
+    const last=chatHistory.findLast(message=>message.role==='user');
+    if(!last){showToast('Send a chat message first or uncheck Include my latest chat message.','error');return;}
+    payload.conversationMessage=last.content;
+  }
   const btn=document.getElementById('predict-btn');
   btn.innerHTML='<div class="spinner"></div> Running model...';
   btn.disabled=true;
@@ -770,11 +781,18 @@ async function runPrediction(){
 
   // Risk badge
   const rb=document.getElementById('pred-risk-badge');
-  rb.textContent=pred.risk_level;
+  const support=result.support;
+  rb.textContent=support?'Demo support band · '+support.band:pred.risk_level;
   const rc=pred.risk_level==='High Risk'?'risk-high':pred.risk_level==='Moderate Risk'?'risk-moderate':pred.risk_level==='Mild Stress'?'risk-medium':'risk-healthy';
-  rb.className='risk-badge '+rc;
+  const bandStyle={Normal:'risk-healthy',Mild:'risk-medium',High:'risk-high'};
+  rb.className='risk-badge '+(bandStyle[support?.band]||rc);
 
   document.getElementById('pred-confidence').textContent=[pred.model,'Experimental questionnaire score','For project demonstration'].filter(Boolean).join(' · ');
+  const analysis=result.conversation;
+  const analysisText=analysis?.status==='analyzed'
+    ? 'Chat text · Sentiment '+analysis.sentiment+' · Emotion '+analysis.emotion+' · Intent '+analysis.intent
+    : analysis?.status==='unavailable'?'Chat analysis unavailable. Used questionnaire only.':'';
+  document.getElementById('pred-conversation').textContent=analysisText;
 
   // Trend
   const trendMap={Improving:{icon:'📈',color:'var(--green)'},Declining:{icon:'📉',color:'var(--red)'},Stable:{icon:'➡',color:'var(--amber)'}};
@@ -790,7 +808,7 @@ async function runPrediction(){
     'Mild Stress':'If you are feeling stressed, consider taking a break or checking in with someone you trust.',
     'Moderate Risk':'If you have concerns about how you are feeling, consider discussing them with a qualified professional.',
     'High Risk':'If you are concerned about your wellbeing or struggling to manage daily activities, consider reaching out to a qualified professional.'};
-  document.getElementById('pred-recommendation').textContent=recs[pred.risk_level]||'Please follow up with a mental health professional.';
+  document.getElementById('pred-recommendation').textContent=support?.recommendation||recs[pred.risk_level]||'Please follow up with a mental health professional.';
 
   const actions=[];
   if(['Moderate Risk','High Risk'].includes(pred.risk_level)) actions.push(`<button class="btn btn-outline btn-sm" onclick="navigate('therapists')">Find therapist</button>`);
@@ -857,6 +875,7 @@ async function sendChat(){
   const input=document.getElementById('chat-input'); const msg=input.value.trim(); if(!msg)return;
   input.value=''; appendMsg(msg,'user');
   const typing=appendTyping();
+  const activeHistory=chatHistory;
   let reply;
   let sources=[];
   if(DEMO){
@@ -868,11 +887,11 @@ async function sendChat(){
     reply=data?.reply||"Chat is temporarily unavailable. Please try again.";
     sources=data?.sources||[];
   }
-  // Only push to history AFTER the API call
+  if(chatHistory!==activeHistory){typing.remove();return;}
   chatHistory.push({role:'user', content:msg});
   chatHistory.push({role:'assistant', content:reply});
   // Keep history max 20 messages to avoid token overflow
-  if(chatHistory.length>20) chatHistory=chatHistory.slice(-20);
+  if(chatHistory.length>20) chatHistory.splice(0,chatHistory.length-20);
   typing.remove();
   appendMsg(reply,'bot',sources);
 }
