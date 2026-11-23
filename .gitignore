@@ -4,3 +4,5 @@ backend/node_modules/*
 .env
 .env.*
 __pycache__/
+
+/ai/stack.joblib

@@ -1,6 +1,10 @@
 """Compare assessment models against the repository's existing rule-based target."""
 
+from argparse import ArgumentParser
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+
+import joblib
 
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -35,6 +39,10 @@ def load_data():
 
 
 def main():
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument("--export-stack", action="store_true",
+                        help="Save the evaluated stack for live questionnaire predictions.")
+    args = parser.parse_args()
     features, target = load_data()
     # Group identical model inputs so they cannot cross the holdout boundary.
     groups = pd.util.hash_pandas_object(features, index=False)
@@ -80,6 +88,16 @@ def main():
         print(f"\n{name}")
         print(classification_report(target.loc[test], predictions, zero_division=0))
         print(confusion_matrix(target.loc[test], predictions, labels=[0, 1]))
+        if name == "stack" and args.export_stack:
+            destination = DATASET.with_name("stack.joblib")
+            with NamedTemporaryFile(dir=destination.parent, delete=False) as temporary:
+                temporary_path = Path(temporary.name)
+            try:
+                joblib.dump(model, temporary_path, compress=3)
+                temporary_path.replace(destination)
+            finally:
+                temporary_path.unlink(missing_ok=True)
+            print(f"Saved {destination}")
 
 
 if __name__ == "__main__":

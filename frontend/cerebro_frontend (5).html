@@ -774,7 +774,7 @@ async function runPrediction(){
   const rc=pred.risk_level==='High Risk'?'risk-high':pred.risk_level==='Moderate Risk'?'risk-moderate':pred.risk_level==='Mild Stress'?'risk-medium':'risk-healthy';
   rb.className='risk-badge '+rc;
 
-  document.getElementById('pred-confidence').textContent=`Experimental questionnaire score · for project demonstration`;
+  document.getElementById('pred-confidence').textContent=[pred.model,'Experimental questionnaire score','For project demonstration'].filter(Boolean).join(' · ');
 
   // Trend
   const trendMap={Improving:{icon:'📈',color:'var(--green)'},Declining:{icon:'📉',color:'var(--red)'},Stable:{icon:'➡',color:'var(--amber)'}};
@@ -786,10 +786,10 @@ async function runPrediction(){
   document.getElementById('pred-risk-factors').innerHTML=factors.length?factors.map(f=>`<div class="factor-item"><div class="factor-dot" style="background:var(--red)"></div><span style="font-size:13px;color:var(--text2)">${f}</span></div>`).join(''):`<div style="font-size:13px;color:var(--green);padding:8px 0">✓ No significant risk factors detected</div>`;
 
   // Recommendation
-  const recs={Healthy:'Your mental health looks good! Maintain your current routine — regular exercise, quality sleep, and social connections are key.',
-    'Mild Stress':'You\'re experiencing mild stress. Consider mindfulness exercises, regular breaks, and talking to someone you trust.',
-    'Moderate Risk':'Your assessment shows moderate risk. Consider scheduling time with a mental health professional. Breathing exercises and journaling can also help.',
-    'High Risk':'Your results indicate high risk. We strongly recommend speaking with a therapist soon. You are not alone — professional support can make a big difference.'};
+  const recs={Healthy:'Try noting what is going well and what you would like to check in on next.',
+    'Mild Stress':'If you are feeling stressed, consider taking a break or checking in with someone you trust.',
+    'Moderate Risk':'If you have concerns about how you are feeling, consider discussing them with a qualified professional.',
+    'High Risk':'If you are concerned about your wellbeing or struggling to manage daily activities, consider reaching out to a qualified professional.'};
   document.getElementById('pred-recommendation').textContent=recs[pred.risk_level]||'Please follow up with a mental health professional.';
 
   const actions=[];

@@ -10,9 +10,6 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-model = joblib.load(os.path.join(BASE_DIR, "model.pkl"))
-encoders = joblib.load(os.path.join(BASE_DIR, "encoder.pkl"))
-
 # --------------------------------------------------
 # RECEIVE INPUT FROM NODE
 # --------------------------------------------------
@@ -68,22 +65,20 @@ feature_columns = [
 
 df = df[feature_columns].copy()
 
-# --------------------------------------------------
-# ENCODE FEATURES
-# --------------------------------------------------
-
-for col in df.columns:
-    if col in encoders:
+stack_path = os.path.join(BASE_DIR, "stack.joblib")
+if os.path.isfile(stack_path):
+    model = joblib.load(stack_path)
+    model_name = "Stacked ensemble"
+else:
+    model = joblib.load(os.path.join(BASE_DIR, "model.pkl"))
+    encoders = joblib.load(os.path.join(BASE_DIR, "encoder.pkl"))
+    model_name = "Random Forest"
+    for column in feature_columns:
         try:
-            df[col] = encoders[col].transform(df[col])
+            df[column] = encoders[column].transform(df[column])
         except ValueError:
-            df[col] = 0
-
-df["Isolation_Score"] = df["Days_Indoors"] + df["Social_Weakness"]
-
-# --------------------------------------------------
-# MODEL PREDICTION
-# --------------------------------------------------
+            df[column] = 0
+    df["Isolation_Score"] = df["Days_Indoors"] + df["Social_Weakness"]
 
 prob = model.predict_proba(df)[0][1]
 
@@ -131,6 +126,7 @@ if input_data.get("mental_health_interview") == "No":
 
 result = {
     "mental_score": mental_score,
+    "model": model_name,
     "risk_level": risk,
     "confidence": float(confidence),
     "top_risk_factors": risk_factors[:3]
