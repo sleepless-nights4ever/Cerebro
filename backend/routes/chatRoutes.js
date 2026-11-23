@@ -3,6 +3,7 @@ const router = express.Router();
 const https = require("https");
 const authMiddleware = require("../middleware/authMiddleware");
 const Mood = require("../models/mood_model");
+const { retrieveWellnessGuidance } = require("../services/wellnessKnowledge");
 
 // ── Gemini API call
 function callGemini(apiKey, systemPrompt, messages) {
@@ -36,6 +37,7 @@ function callGemini(apiKey, systemPrompt, messages) {
         catch (e) { reject(new Error("Invalid JSON from Gemini: " + data)); }
       });
     });
+    req.setTimeout(8000, () => req.destroy(new Error("Gemini request timed out")));
     req.on("error", reject);
     req.write(payload);
     req.end();
@@ -96,11 +98,6 @@ const responses = {
     "Of course! I can help you reflect on your mood, suggest coping strategies, or just be a supportive ear.",
     "You can share anything with me — I won't judge. What would you like help with today?"
   ],
-  crisis: [
-    "I'm really concerned about what you've shared. Please reach out right now — iCall: 9152987821 or Vandrevala Foundation: 1860-2662-345. You don't have to face this alone.",
-    "What you're feeling sounds very serious. Please contact iCall at 9152987821 — they're available 24/7. You matter.",
-    "Please reach out to a crisis helpline right now. iCall: 9152987821 | Vandrevala Foundation: 1860-2662-345. Your life has value."
-  ],
   default: [
     "Thank you for sharing that with me. Can you tell me more about how you've been feeling?",
     "I hear you. It sounds like things have been difficult. What's been the hardest part?",
@@ -136,59 +133,63 @@ function getRuleBasedResponse(intent, history) {
 // ── POST /api/chat
 router.post("/", authMiddleware, async (req, res) => {
   try {
-    const { message, history = [] } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const { message, history = [] } = req.body || {};
+    if (typeof message !== "string" || !message.trim() || message.length > 4000 ||
+        !Array.isArray(history)) {
+      return res.status(400).json({ error: "Enter a message of 1 to 4000 characters and supply history as an array." });
+    }
 
+    const intent = detectIntent(message);
+    if (intent === "crisis") {
+      return res.json({
+        reply: "I’m concerned about your safety. If you might hurt yourself soon or have already taken something or injured yourself, contact local emergency services now. If you can, tell someone you trust what’s happening and ask them to stay with you.",
+        sources: []
+      });
+    }
+
+    const previousMessages = history.slice(-10).filter(item =>
+      item && ["user", "assistant"].includes(item.role) &&
+      typeof item.content === "string" && item.content.trim() && item.content.length <= 4000
+    ).map(({ role, content }) => ({ role, content }));
     const latest = await Mood.findOne({ userId: req.user.id }).sort({ createdAt: -1 });
-    const stressScore = latest?.stressLevel || 5;
-    const riskLevel = latest?.risk_level || "Unknown";
-    const mentalScore = latest?.mental_score || 70;
+    const stressScore = latest?.stressLevel ?? null;
+    const riskLevel = latest?.risk_level ?? null;
+    const mentalScore = latest?.mental_score ?? null;
+    const guidance = retrieveWellnessGuidance(message);
+    const sources = guidance.map(({ title, url }) => ({ title, url }));
+    const apiKey = process.env.GEMINI_API_KEY;
+    let reply;
 
-    let reply = null;
-
-    // Try Gemini first if API key exists
-    if (apiKey) {
+    if (apiKey && guidance.length) {
+      const notes = guidance.map(({ title, summary }) => title + "\n" + summary).join("\n\n");
+      const systemPrompt = [
+        "You are Cerebro, a supportive wellness chatbot. Respond in 2–4 sentences.",
+        "Use the reference notes for any wellness suggestions. Do not invent sources or include URLs.",
+        "Do not provide diagnoses, clinical risk estimates, treatment advice, or medication instructions.",
+        "For possible immediate danger, encourage contacting local emergency services and a trusted person.",
+        "The user's recent self-reported stress is " + (stressScore ?? "unavailable") + ".",
+        "Reference notes:\n" + notes
+      ].join("\n");
       try {
-        const systemPrompt = `You are Cerebro, a compassionate mental health support AI.
-The user's mental wellness score is ${mentalScore}/100 and stress level is ${stressScore}/10.
-Keep responses concise (2-4 sentences). Never diagnose. Suggest professional help for serious concerns.
-If the user expresses suicidal thoughts, provide: iCall: 9152987821, Vandrevala Foundation: 1860-2662-345.
-This is an ongoing conversation — do NOT repeat greetings or ask how the user feels if already asked.`;
-
-        const previousMessages = (history || [])
-          .slice(-10)
-          .filter(m => m.role && m.content && ["user", "assistant"].includes(m.role));
-
         const messages = [...previousMessages, { role: "user", content: message }];
-
-        const { status, body: data } = await callGemini(apiKey, systemPrompt, messages);
-        console.log("Gemini status:", status);
-
+        const { status, body } = await callGemini(apiKey, systemPrompt, messages);
         if (status === 200) {
-          reply = data.candidates?.[0]?.content?.parts?.[0]?.text || null;
-        } else {
-          console.log("Gemini unavailable, using rule-based fallback. Error:", data.error?.message);
+          reply = body.candidates?.[0]?.content?.parts?.find(part => !part.thought)?.text?.trim();
         }
-      } catch (geminiErr) {
-        console.log("Gemini failed, using rule-based fallback:", geminiErr.message);
+      } catch {
+        console.warn("Gemini unavailable. Using local guidance.");
       }
     }
 
-    // Fallback to rule-based if Gemini failed or no API key
     if (!reply) {
-      const intent = detectIntent(message);
-      reply = getRuleBasedResponse(intent, history);
-      if ((stressScore >= 8 || riskLevel === "High Risk") && intent === "default") {
-        reply = "I can see from your recent check-ins that you've been under a lot of stress. " + reply;
-      }
-      console.log(`Rule-based fallback | intent: ${intent}`);
+      reply = guidance[0]?.summary || getRuleBasedResponse(intent, previousMessages);
     }
 
-    res.json({ reply, context: { stressScore, riskLevel, mentalScore } });
+    res.json({ reply, sources, context: { stressScore, riskLevel, mentalScore } });
 
   } catch (err) {
     console.error("Chat error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Chat is temporarily unavailable." });
   }
 });
 

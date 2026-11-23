@@ -30,9 +30,9 @@ else:
         "Occupation":"Student",
         "self_employed":"No",
         "treatment":"No",
-        "Days_Indoors":"3",
+        "Days_Indoors":"1-14 days",
         "Changes_Habits":"Yes",
-        "Work_Interest":"Low",
+        "Work_Interest":"No",
         "Social_Weakness":"Yes",
         "mental_health_interview":"No",
         "care_options":"Yes"
@@ -47,18 +47,6 @@ df = pd.DataFrame([input_data])
 # --------------------------------------------------
 # FEATURE ENGINEERING
 # --------------------------------------------------
-
-def safe_int(val, default=0):
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
-
-# Isolation score (same logic used in training)
-df["Isolation_Score"] = (
-    safe_int(df["Days_Indoors"].iloc[0]) +
-    (1 if df["Social_Weakness"].iloc[0] == "Yes" else 0)
-)
 
 # --------------------------------------------------
 # SELECT ONLY FEATURES USED IN TRAINING
@@ -75,11 +63,10 @@ feature_columns = [
     "Work_Interest",
     "Social_Weakness",
     "mental_health_interview",
-    "care_options",
-    "Isolation_Score"
+    "care_options"
 ]
 
-df = df[feature_columns]
+df = df[feature_columns].copy()
 
 # --------------------------------------------------
 # ENCODE FEATURES
@@ -89,8 +76,10 @@ for col in df.columns:
     if col in encoders:
         try:
             df[col] = encoders[col].transform(df[col])
-        except:
+        except ValueError:
             df[col] = 0
+
+df["Isolation_Score"] = df["Days_Indoors"] + df["Social_Weakness"]
 
 # --------------------------------------------------
 # MODEL PREDICTION
@@ -124,13 +113,13 @@ risk_factors = []
 if input_data.get("Social_Weakness") == "Yes":
     risk_factors.append("Social Weakness")
 
-if input_data.get("Work_Interest") == "Low":
+if input_data.get("Work_Interest") == "No":
     risk_factors.append("Low Work Interest")
 
 if input_data.get("Changes_Habits") == "Yes":
     risk_factors.append("Lifestyle Changes")
 
-if safe_int(input_data.get("Days_Indoors", 0)) >= 5:
+if input_data.get("Days_Indoors") in {"15-30 days", "31-60 days", "More than 2 months"}:
     risk_factors.append("High Social Isolation")
 
 if input_data.get("mental_health_interview") == "No":

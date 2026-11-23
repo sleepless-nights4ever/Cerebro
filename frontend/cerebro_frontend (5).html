@@ -774,7 +774,7 @@ async function runPrediction(){
   const rc=pred.risk_level==='High Risk'?'risk-high':pred.risk_level==='Moderate Risk'?'risk-moderate':pred.risk_level==='Mild Stress'?'risk-medium':'risk-healthy';
   rb.className='risk-badge '+rc;
 
-  document.getElementById('pred-confidence').textContent=`Model confidence: ${Math.round((pred.confidence||0.8)*100)}%`;
+  document.getElementById('pred-confidence').textContent=`Experimental questionnaire score · for project demonstration`;
 
   // Trend
   const trendMap={Improving:{icon:'📈',color:'var(--green)'},Declining:{icon:'📉',color:'var(--red)'},Stable:{icon:'➡',color:'var(--amber)'}};
@@ -858,13 +858,15 @@ async function sendChat(){
   input.value=''; appendMsg(msg,'user');
   const typing=appendTyping();
   let reply;
+  let sources=[];
   if(DEMO){
     const replies=["I hear you — it's okay to feel that way. Would you like to try a quick grounding exercise together?","Thank you for sharing. What's been weighing on your mind the most lately?","That sounds really tough. You're not alone. Have you tried any breathing techniques when stress builds up?","I'm glad you reached out. Your feelings are valid. What's one small thing you could do for yourself today?","I appreciate you trusting me with that. Would connecting with a therapist feel helpful right now?"];
     await new Promise(r=>setTimeout(r,1200)); reply=replies[Math.floor(Math.random()*replies.length)];
   } else {
     // Send existing history (without current message — backend appends it)
     const data=await apiFetch('/chat','POST',{message:msg, history:[...chatHistory]});
-    reply=data?.reply||"I'm here to support you.";
+    reply=data?.reply||"Chat is temporarily unavailable. Please try again.";
+    sources=data?.sources||[];
   }
   // Only push to history AFTER the API call
   chatHistory.push({role:'user', content:msg});
@@ -872,17 +874,34 @@ async function sendChat(){
   // Keep history max 20 messages to avoid token overflow
   if(chatHistory.length>20) chatHistory=chatHistory.slice(-20);
   typing.remove();
-  appendMsg(reply,'bot');
+  appendMsg(reply,'bot',sources);
 }
 function clearChat(){
   chatHistory=[];
   document.getElementById('chat-messages').innerHTML='';
   appendMsg("Hi! I'm Cerebro, your mental wellness companion. How are you feeling today? 😊",'bot');
 }
-function appendMsg(text,role){
+function appendMsg(text,role,sources=[]){
   const wrap=document.getElementById('chat-messages'); const t=new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'});
   const div=document.createElement('div'); div.className=`msg ${role}`;
-  div.innerHTML=`<div class="msg-bubble">${text}</div><div class="msg-time">${t}</div>`;
+  const bubble=document.createElement('div');
+  bubble.className='msg-bubble';
+  bubble.textContent=text;
+  for(const source of sources){
+    if(typeof source?.url!=='string'||!source.url.startsWith('https://')) continue;
+    const row=document.createElement('div');
+    const link=document.createElement('a');
+    link.href=source.url;
+    link.target='_blank';
+    link.rel='noopener noreferrer';
+    link.textContent=source.title;
+    row.appendChild(link);
+    bubble.appendChild(row);
+  }
+  const time=document.createElement('div');
+  time.className='msg-time';
+  time.textContent=t;
+  div.append(bubble,time);
   wrap.appendChild(div); wrap.scrollTop=wrap.scrollHeight; return div;
 }
 function appendTyping(){
